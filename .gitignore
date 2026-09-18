@@ -19,3 +19,4 @@ vectorstore/
 .model-cache/
 AGENTS.md
 HANDOFF.md
+rag_eval/
