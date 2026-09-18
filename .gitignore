@@ -1,0 +1,19 @@
+# Local credentials and environment overrides. Keep only the empty template.
+.env
+.env.*
+!.env.example
+
+# Local policy documents and generated indexes may contain non-public material.
+gdut/docs/*
+!gdut/docs/.gitkeep
+!gdut/docs/pdf/
+!gdut/docs/pdf/.gitkeep
+!gdut/docs/md/
+!gdut/docs/md/.gitkeep
+
+.venv/
+__pycache__/
+*.pyc
+vectorstore/
+.pytest_cache/
+.model-cache/
