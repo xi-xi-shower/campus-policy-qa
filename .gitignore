@@ -17,3 +17,5 @@ __pycache__/
 vectorstore/
 .pytest_cache/
 .model-cache/
+AGENTS.md
+HANDOFF.md
