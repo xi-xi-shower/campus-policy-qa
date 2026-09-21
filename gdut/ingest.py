@@ -5,6 +5,7 @@ from pathlib import Path
 from app.config import ROOT, COLLECTION, embeddings, load_environment
 from ingest_pdf.ingest import load_pages
 from ingest_md.ingest import load_sections
+from ingest_md.handbook import HANDBOOK
 
 
 def load_documents(directory):
@@ -20,6 +21,10 @@ def load_documents(directory):
             documents.extend(loaded)
     if not documents:
         raise ValueError("docs/ 没有有效的 PDF 或 Markdown 文本（空目录、空白文件或扫描件）；已有索引保留，未更新。")
+    # The reviewed Markdown replaces the same handbook PDF, avoiding duplicate
+    # retrievals with incompatible page-based IDs. Other PDFs remain unchanged.
+    if any(d.metadata["source"] == HANDBOOK for d in documents):
+        documents = [d for d in documents if d.metadata["source"] != Path(HANDBOOK).with_suffix(".pdf").name]
     # Only disambiguate duplicate basenames; usual citations remain filename-only.
     paths = {}
     for document in documents:

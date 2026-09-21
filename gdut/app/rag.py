@@ -23,17 +23,20 @@ def recent_turns(history):
     return [message for pair in pairs[-3:] for message in pair]
 
 
-def document_source(document):
+def document_source(document, similarity=None):
     metadata = document.metadata
-    # Old PDF indexes have no file_type; keep them readable until rebuilt.
     source = {"filename": metadata["source"], "file_type": metadata.get("file_type", "pdf"),
               "text": document.page_content}
     if source["file_type"] == "md":
         source["section"] = metadata["section"]
         source["label"] = f"{source['filename']}，章节：{source['section']}"
+        fallback_id = f"{source['filename']}#section={source['section']}"
     else:
         source["page"] = metadata["page"]
         source["label"] = f"{source['filename']}，第 {source['page']} 页"
+        fallback_id = f"{source['filename']}#page={source['page']}"
+    source["id"] = metadata.get("doc_id") or fallback_id
+    source["similarity"] = float(similarity) if similarity is not None else None
     return source
 
 
@@ -58,10 +61,18 @@ class PolicyRAG:
                 return {"answer": query.removeprefix("澄清："), "sources": []}
             if not query:
                 raise RuntimeError("empty rewrite")
-        docs = self.store.similarity_search(query, k=4)
+        scored_search = (getattr(self.store, "similarity_search_with_relevance_scores")
+                         if "similarity_search_with_relevance_scores" in dir(self.store) else None)
+        if callable(scored_search):
+            scored_docs = scored_search(query, k=4)
+            docs = [item[0] for item in scored_docs]
+            similarities = [item[1] for item in scored_docs]
+        else:
+            docs = self.store.similarity_search(query, k=4)
+            similarities = [None] * len(docs)
         if not docs:
             return {"answer": "暂无相关政策", "sources": []}
-        sources = [document_source(d) for d in docs]
+        sources = [document_source(d, score) for d, score in zip(docs, similarities)]
         context = "\n\n".join(f"【{s['label']}】\n{s['text']}" for s in sources)
         response = self.llm.invoke([
             ("system", self.prompt.replace("{context}", context)), *turns, ("human", question),

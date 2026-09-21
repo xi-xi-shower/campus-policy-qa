@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 from langchain_core.documents import Document
+from ingest_md.handbook import HANDBOOK, split_handbook
 
 HEADING = re.compile(r"^ {0,3}(#{1,3})[ \t]+(.+?)\s*$")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -53,7 +54,8 @@ def load_sections(directory, *, allow_empty=False):
             text = path.read_text(encoding="utf-8-sig")
         except (OSError, UnicodeError):
             raise ValueError(f"无法读取 {path.name}；请检查文件权限并使用 UTF-8 编码。索引未更新。") from None
-        documents.extend(split_sections(text, path.name))
+        documents.extend(split_handbook(text, path.name) if path.name == HANDBOOK
+                         else split_sections(text, path.name))
     if not documents and not allow_empty:
         raise ValueError("没有有效的 Markdown 文本；已有索引保留，未更新。")
     return documents
