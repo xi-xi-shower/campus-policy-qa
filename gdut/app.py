@@ -1,3 +1,4 @@
+import os
 import sys
 
 from app.rag import build_rag
@@ -14,7 +15,7 @@ def main():
         return 1
     import uvicorn
     from app.server import create_app
-    uvicorn.run(create_app(rag), host="127.0.0.1", port=7860)
+    uvicorn.run(create_app(rag), host=os.getenv("HOST", "127.0.0.1"), port=7860)
     return 0
 
 

@@ -4,6 +4,60 @@
 首页为现有前端，`/gradio` 提供需求指定的 `gr.ChatInterface`，两者共用问答逻辑。
 对话只保存在当前会话；不提供登录、爬虫、OCR 或历史持久化。
 
+## Docker 本机部署
+
+先启动 Docker Desktop 并使用 Linux containers，以下命令都在项目根目录（`D:\gdut_agent`）运行。
+
+确认 `gdut/.env` 已填写有效的 `DEEPSEEK_API_KEY`，政策资料位于 `gdut/docs/pdf` 或 `gdut/docs/md`，并关闭占用本机 7860 端口的旧服务。
+
+按顺序执行，每一步成功后再继续：
+
+```powershell
+docker compose build
+docker compose run --rm web python ingest.py
+docker compose up -d
+docker compose ps
+docker compose logs --tail 100 web
+```
+
+访问 http://127.0.0.1:7860 和 http://127.0.0.1:7860/gradio，健康检查地址为 http://127.0.0.1:7860/api/health，预期返回 `{"status":"ready"}`。
+
+镜像使用 Python 3.11 的 `gdut` Conda 环境，建库和启动命令均自动在该环境执行，首次建库需要联网下载 BGE 模型，问答需要访问 DeepSeek。
+
+服务启动默认以 `HF_HUB_OFFLINE=1` 加载建库时缓存的模型，避免启动时再次访问 Hugging Face，此设置不会阻止 DeepSeek 问答联网。
+
+如果 Hugging Face 无法连接、但本机已有完整 BGE 缓存，可先复制该模型缓存到 Docker 卷，再离线建库，成功后执行 `docker compose up -d`：
+
+```powershell
+docker compose run --rm -v './.model-cache/hub/models--BAAI--bge-small-zh-v1.5:/seed:ro' web python -c "import shutil; shutil.copytree('/seed', '/app/.model-cache/hub/models--BAAI--bge-small-zh-v1.5', dirs_exist_ok=True)"
+docker compose run --rm -e HF_HUB_OFFLINE=1 web python ingest.py
+```
+
+容器只读挂载本机政策目录，索引和模型缓存分别保存在 `vectorstore`、`model-cache` 命名卷中，不读取或修改本机 `gdut/vectorstore`，密钥仅由 Compose 在运行时注入。
+
+更新资料后先停止服务，再重新建库，只有建库成功才重新启动：
+
+```powershell
+docker compose stop web
+docker compose run --rm web python ingest.py
+docker compose up -d
+```
+
+日常停止使用 `docker compose down`，它会保留命名卷；`docker compose down -v` 会删除索引和模型缓存，需要重新建库和下载模型。
+
+代码更新后重新执行 `docker compose build` 和 `docker compose up -d`，现有命名卷继续复用，缺少索引或密钥时请查看容器日志。
+
+依赖与现有测试可在镜像中验证：
+
+```powershell
+docker compose run --rm web python -m pip check
+docker compose run --rm web python -m unittest discover -s tests -v
+```
+
+默认只允许本机访问，`/api/health` 只表示本地组件已加载，真实问答仍需单独验证外部模型服务。
+
+2026-09-21 本机 Docker 验证通过：镜像构建及 `pip check` 成功，Windows 和 Linux 容器中各 20 项测试通过，复用已有 BGE 缓存建成 1151 个片段，首页、脚本、Gradio 和健康接口均返回 200，真实问答正确引用宿舍管理第十四条，强制重建服务容器后仍可正常检索和回答。
+
 ## 准备与启动
 
 Python 3.10+；本次验证使用 Windows / Python 3.11。以下在 `D:\gdut_agent\gdut` 运行：
