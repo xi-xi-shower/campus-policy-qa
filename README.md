@@ -89,10 +89,15 @@ python app.py
 ## 工作方式
 
 对于markdown文本和pdf文档分别进行处理再整合
+
 使用langchain框架
+
 切分 - embedding - 入库 - 问答 - 索引
+
 切分采用 先按文档结构分段，再按 token 长度递归切块
+
 项目使用 BAAI/bge-small-zh-v1.5 做 embedding
+
 索引返回逻辑按问题向量与文档块向量的余弦相似程度排名
 
 ### 资料入库
