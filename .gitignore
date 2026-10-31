@@ -20,5 +20,6 @@ vectorstore/
 AGENTS.md
 HANDOFF.md
 rag_eval/
+design/
 
 dockers/
