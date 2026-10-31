@@ -1,6 +1,6 @@
 import os
 
-from app.config import ROOT, COLLECTION, embeddings, load_environment, read_prompt
+from app.config import ROOT, COLLECTION, ANSWER_K, RERANKER_MODEL, embeddings, load_environment, read_prompt
 
 
 def content_text(content):
@@ -41,8 +41,9 @@ def document_source(document, similarity=None):
 
 
 class PolicyRAG:
-    def __init__(self, store, llm, prompt):
+    def __init__(self, store, llm, prompt, retriever=None):
         self.store, self.llm, self.prompt = store, llm, prompt
+        self.retriever = retriever
 
     def answer(self, question, history):
         question = question.strip()
@@ -63,16 +64,25 @@ class PolicyRAG:
                 raise RuntimeError("empty rewrite")
         scored_search = (getattr(self.store, "similarity_search_with_relevance_scores")
                          if "similarity_search_with_relevance_scores" in dir(self.store) else None)
-        if callable(scored_search):
-            scored_docs = scored_search(query, k=4)
+        rerank_scores = None
+        if self.retriever is not None:
+            hits = self.retriever.retrieve(query)
+            docs = [hit[0] for hit in hits]
+            similarities = [hit[1] for hit in hits]
+            rerank_scores = [hit[2] for hit in hits]
+        elif callable(scored_search):
+            scored_docs = scored_search(query, k=ANSWER_K)
             docs = [item[0] for item in scored_docs]
             similarities = [item[1] for item in scored_docs]
         else:
-            docs = self.store.similarity_search(query, k=4)
+            docs = self.store.similarity_search(query, k=ANSWER_K)
             similarities = [None] * len(docs)
         if not docs:
             return {"answer": "暂无相关政策", "sources": []}
         sources = [document_source(d, score) for d, score in zip(docs, similarities)]
+        if rerank_scores is not None:
+            for source, score in zip(sources, rerank_scores):
+                source["rerank_score"] = score
         context = "\n\n".join(f"【{s['label']}】\n{s['text']}" for s in sources)
         response = self.llm.invoke([
             ("system", self.prompt.replace("{context}", context)), *turns, ("human", question),
@@ -97,6 +107,10 @@ def build_rag():
     from langchain_chroma import Chroma
     from langchain_deepseek import ChatDeepSeek
     store = Chroma(client=client, collection_name=COLLECTION, embedding_function=embeddings())
+    from sentence_transformers import CrossEncoder
+    from app.retrieval import HybridRetriever
+    reranker = CrossEncoder(RERANKER_MODEL, device="cpu")
+    retriever = HybridRetriever(store, reranker)
     llm = ChatDeepSeek(model="deepseek-v4-flash", temperature=0, timeout=60, max_retries=1,
                        extra_body={"thinking": {"type": "disabled"}})
-    return PolicyRAG(store, llm, prompt)
+    return PolicyRAG(store, llm, prompt, retriever=retriever)

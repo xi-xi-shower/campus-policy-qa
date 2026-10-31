@@ -9,6 +9,27 @@ from app.rag import PolicyRAG, recent_turns
 
 
 class RAGTests(unittest.TestCase):
+    def test_hybrid_followup_preserves_citations_and_score_meaning(self):
+        store, llm, retriever = Mock(), Mock(), Mock()
+        doc = SimpleNamespace(page_content="大二条款", metadata={"source": "政策.pdf", "page": 3})
+        retriever.retrieve.return_value = [(doc, None, 2.5)]
+        llm.invoke.side_effect = [SimpleNamespace(content="大二奖学金条件？"), SimpleNamespace(content="依据政策回答")]
+        result = PolicyRAG(store, llm, "规则 {context}", retriever).answer("那大二呢？", [
+            {"role": "user", "content": "大一奖学金？"}, {"role": "assistant", "content": "大一条款"}])
+        retriever.retrieve.assert_called_once_with("大二奖学金条件？")
+        self.assertIsNone(result["sources"][0]["similarity"])
+        self.assertEqual(result["sources"][0]["rerank_score"], 2.5)
+        self.assertIn("【政策.pdf，第 3 页】", llm.invoke.call_args.args[0][0][1])
+        self.assertEqual(llm.invoke.call_args.args[0][-1], ("human", "那大二呢？"))
+        store.similarity_search.assert_not_called()
+
+    def test_hybrid_no_hits_does_not_generate(self):
+        store, llm, retriever = Mock(), Mock(), Mock()
+        retriever.retrieve.return_value = []
+        result = PolicyRAG(store, llm, "{context}", retriever).answer("问题", [])
+        self.assertEqual(result, {"answer": "暂无相关政策", "sources": []})
+        llm.invoke.assert_not_called()
+
     def test_only_three_complete_turns(self):
         history = []
         for i in range(5):

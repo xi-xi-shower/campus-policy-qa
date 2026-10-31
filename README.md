@@ -57,7 +57,7 @@ python ingest.py
 python app.py
 ```
 
-首次建库需要联网下载 `BAAI/bge-small-zh-v1.5` 模型；在线问答需要有效的 DeepSeek 密钥和网络连接。
+首次建库需要联网下载 `BAAI/bge-small-zh-v1.5` 模型；首次启动还需下载 `BAAI/bge-reranker-base` 重排序模型，之后复用本地缓存。两个模型均在 CPU 上运行，重排序会增加问答延迟。在线问答需要有效的 DeepSeek 密钥和网络连接。
 
 启动后访问：
 
@@ -98,7 +98,7 @@ python app.py
 
 项目使用 BAAI/bge-small-zh-v1.5 做 embedding
 
-索引返回逻辑按问题向量与文档块向量的余弦相似程度排名
+检索使用 BM25 中文关键词与 BGE 向量双路召回，经 RRF 融合后由 BGE reranker 重排序。
 
 ### 资料入库
 
@@ -117,11 +117,25 @@ python app.py
 
 1. 用户通过网页或 Gradio 输入问题。
 2. 有历史对话时，结合最近 3 轮完整对话，将追问改写为独立检索问题；指代不清时可请求澄清。
-3. 从知识库检索最多 4 个相关片段。
+3. 使用 jieba 中文分词和 BM25Plus 关键词检索、BGE 向量检索各召回最多 20 个片段；按 RRF（常数 60）融合排名并去重，取前 20 个候选交给 `BAAI/bge-reranker-base`，最终选取最多 4 个片段。
 4. 按照根目录 `prompt.md` 中的规则，将问题和相关资料交给 DeepSeek 生成回答。
 5. 页面展示答案及来源，包括文件名、PDF 页码或 Markdown 章节和原文片段。
 
 网页和 Gradio 共用问答逻辑，对话仅保存在当前会话，不提供登录和历史持久化。检索命中不代表片段一定支持答案，关键条款应核对原文。
+
+BM25 索引在启动时从 Chroma 已有文本构建于内存，无需重新计算向量；资料更新后仍需重新建库并重启服务。模型与检索数量集中定义于 `gdut/app/config.py`。重排序失败会报告问答不可用，不会静默跳过。
+
+来源中的 `similarity` 保留向量相关性分数，仅关键词命中的片段为 `null`；`rerank_score` 为独立的重排序分数，不表示正确率。最终来源按重排序结果排列。
+
+在项目根目录激活 `gdut` 环境后运行回归测试（不下载模型、不调用 DeepSeek）：
+
+```powershell
+conda activate gdut
+cd gdut
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+无法激活时，可在 `gdut` 目录使用 `conda run -n gdut python -m unittest discover -s tests -p "test_*.py"`。
 
 问答会将问题、相关对话及检索片段发送给 DeepSeek。LangSmith 追踪默认关闭。
 
@@ -146,6 +160,7 @@ python app.py
     ├── app/
     │   ├── config.py          # 环境、模型与提示词配置
     │   ├── rag.py             # 检索、追问改写与回答生成
+    │   ├── retrieval.py       # BM25、向量融合与本地重排序
     │   ├── server.py          # HTTP 接口与 Gradio 集成
     │   └── static/            # 网页及前端脚本
     ├── ingest_pdf/            # PDF 提取模块

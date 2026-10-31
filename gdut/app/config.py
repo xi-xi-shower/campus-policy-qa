@@ -4,6 +4,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = "BAAI/bge-small-zh-v1.5"
 COLLECTION = "campus_policy"
+RERANKER_MODEL = "BAAI/bge-reranker-base"
+RETRIEVAL_K = 20
+RERANK_K = 20
+ANSWER_K = 4
+RRF_K = 60
 
 
 def load_environment():
